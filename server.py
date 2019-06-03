@@ -3,6 +3,8 @@ import socket
 import json
 import time
 import aiohttp  # Asynchronous IO with HTTP
+import asyncio  # Asynchronous Python programming
+import re  # Regular Expressions
 
 class IAMAT:
 	# Parse IAMAT formatted data
@@ -10,9 +12,16 @@ class IAMAT:
 		# IAMAT <client id>	<gps coordinates> <time client sent message>
 		# IAMAT kiwi.cs.ucla.edu +34.068930-118.445127 1520023934.918963997
 		split_data = data.split(" ")
-		self.client_id = split_data[1]
-		self.gps = split_data[2]
+		self.client_id = str(split_data[1])
+		self.gps = str(split_data[2])
 		self.timestamp = float(split_data[3])
+
+		# Get latitude, longitude
+		abs_lat_lng = [x for x in re.split('\+|\-', self.gps) if x != '']
+		sign_lat_lng = [x for x in re.split('[0-9]|\.', self.gps) if x != '']
+		self.lat = float(sign_lat_lng[0] + abs_lat_lng[0])
+		self.lng = float(sign_lat_lng[1] + abs_lat_lng[1])
+
 
 	def __str__(self):
 		return ("IAMAT " + str(self.client_id) + " " + str(self.gps) + " " + str(self.timestamp))
@@ -73,15 +82,110 @@ def is_iamat(data):
 	return False
 
 def is_whatsat(data):
-	if (len(data) >= 7) and (len(data.split(" ")) == 4):
-		if data[0:7] == "WHATSAT":
-			return True
+	try:
+		split_data = data.split(" ")
+		if (len(data) >= 7) and (len(split_data) == 4):
+			radius = float(split_data[2])
+			upper_bound = int(split_data[3])
+			if data[0:7] == "WHATSAT" and radius >= 0 and radius <= 50 and upper_bound >= 0 and upper_bound <= 20:
+				return True
+	except Exception:
+		return False
 	return False
 
 
+def get_url(api_key, whatsat, lat, lng):
+	client_id = whatsat.client_id
+	radius = whatsat.radius
+	upper_bound = whatsat.upper_bound
+	return 'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?' +
+	'input=UCLA' +
+	'&inputtype=textquery' +
+	'&key=' + str(api_key) +
+	'&location=' + lat + ',' + lng +
+	'&radius=' + radius
 
-# Creates a server
-def main():
+
+
+
+# server defines behavior for handling each open_connection
+
+# Echo data back to client
+async def echo_server(reader, writer):
+
+	while True:
+		data = await reader.read(1024)
+		if not data:  # Handles non-data, such as when client closes connection
+			break
+		print("Received: ", data.decode())
+		print("Sending: ", data.decode())
+		writer.write(data)
+		await writer.drain()
+	writer.close()
+
+
+# Implementation of a server that responds to client requests
+async def my_server(reader, writer, server_id, api_key):
+
+	client_location = {}  # client_location[client_id] == (lat, lnd)
+
+	while True:
+		encoded_data = await reader.read(1024)
+
+		# Handle if client stops sending data
+		if not encoded_data:
+			break
+
+		data = encoded_data.decode()
+
+		# Client shares location
+		if is_iamat(data):
+			iamat = IAMAT(data)
+
+			# Store client location
+			client_location[iamat.client_id] = iamat.lat, iamat.lng
+
+			# Record time elapsed
+			print(iamat.timestamp, time.time())
+			time_elapsed = time.time() - iamat.timestamp
+
+			# Send AT message to client
+			at = AT.from_iamat(iamat, server_id, time_elapsed)
+			writer.write(at.__str__().encode())
+		# Client wants information about the location of a client
+		elif is_whatsat(data):
+			whatsat = WHATSAT(data)
+
+
+			client_id = whatsat.client_id
+
+			if client_location.get(client_id):
+				# server knows about client location
+				lat, lng = client_location[client_id]
+				# Query Google Places API
+				url = get_url(api_key, whatsat, lat, lng)
+				# TODO: query google places api, make things async, communicate between servers
+				
+
+			else:
+				# server doesn't know this client location, command fails
+				writer.write(('? ' + data).encode())
+		else:
+			writer.write(('? ' + data).encode())
+
+		await writer.drain()
+	# connection dropped, close the writer
+	writer.close()
+
+
+
+async def main():
+
+	API_KEY = 'AIzaSyCjsE3QvP9vF8oh5F5TDuCmpJH2oG4Tsfw'
+
+	# Example request URL
+	'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=UCLA&inputtype=textquery&key=AIzaSyCjsE3QvP9vF8oh5F5TDuCmpJH2oG4Tsfw'
+
 	# Process CLI arguments
 	if len(sys.argv) is 2:
 		server_id = sys.argv[1]
@@ -123,59 +227,69 @@ def main():
 
 	HOST = '127.0.0.1'
 
-	SERVER_IP = (HOST, port)
+	server_ip_address = (HOST, port)
 
-	# Open Socket
-	with socket.socket() as s:
-		s.bind(SERVER_IP)  # associate application's socket with an IP address
-		print("Listening for incoming connections.")
-		s.listen()  # Listen for incoming connections
-		print("Accepting incoming connection.")
-		conn, address = s.accept()  # Accept an incoming connection
-
-		# Open Connection
-		with conn:
-			print("Accepted incoming connection from ", address)
-			while True:
-				# Decode data received from socket
-				data = conn.recv(1024).decode('utf-8')  # Receive 1024 bytes from connection
-				print(data)
-
-				if is_iamat(data):
-					# Server receives IAMAT message
-
-
-					# Parse 
-					iamat = IAMAT(data)
-					print("Received IAMAT: ", iamat)
-
-					# Record time elapsed
-					print(iamat.timestamp, time.time())
-					time_elapsed = time.time() - iamat.timestamp
-
-					# Reply with AT message
-					at = AT.from_iamat(iamat=iamat, server_id=server_id, time_elapsed=time_elapsed)
-					print("Sending AT: ", at)
-					conn.sendall(at.__str__().encode('utf-8'))
-
-				elif is_whatsat(data):
-					# Server receives WHATSAT message
-
-					print("Received WHATSAT")
-					# Parse
-					whatsat = WHATSAT(data)
-
-					# Make API request to Google Places
+	server = await asyncio.start_server(lambda reader, writer: my_server(reader, writer, server_id, API_KEY),
+		HOST, port)
+	await server.serve_forever()  # Handle client connections
 
 
 
-				# invalid command
-				else:
-					conn.sendall(('? ' + data).encode('utf-8'))
+
+
+
+
+	# # Open Socket
+	# with socket.socket() as s:
+	# 	s.bind(SERVER_IP)  # associate application's socket with an IP address
+	# 	print("Listening for incoming connections.")
+	# 	s.listen()  # Listen for incoming connections
+	# 	print("Accepting incoming connection.")
+	# 	conn, address = s.accept()  # Accept an incoming connection
+
+	# 	# Open Connection
+	# 	with conn:
+	# 		print("Accepted incoming connection from ", address)
+	# 		while True:
+	# 			# Decode data received from socket
+	# 			data = conn.recv(1024).decode('utf-8')  # Receive 1024 bytes from connection
+	# 			print(data)
+
+	# 			if is_iamat(data):
+	# 				# Server receives IAMAT message
+
+
+	# 				# Parse 
+	# 				iamat = IAMAT(data)
+	# 				print("Received IAMAT: ", iamat)
+
+	# 				# Record time elapsed
+	# 				print(iamat.timestamp, time.time())
+	# 				time_elapsed = time.time() - iamat.timestamp
+
+	# 				# Reply with AT message
+	# 				at = AT.from_iamat(iamat=iamat, server_id=server_id, time_elapsed=time_elapsed)
+	# 				print("Sending AT: ", at)
+	# 				conn.sendall(at.__str__().encode('utf-8'))
+
+	# 			elif is_whatsat(data):
+	# 				# Server receives WHATSAT message
+
+	# 				print("Received WHATSAT")
+	# 				# Parse
+	# 				whatsat = WHATSAT(data)
+
+	# 				# Make API request to Google Places
+
+	# 			# invalid command
+	# 			else:
+	# 				conn.sendall(('? ' + data).encode('utf-8'))
 
 
 if __name__ == "__main__":
-	main()
+	loop = asyncio.get_event_loop()
+	# asyncio.run(main())
+	loop.run_until_complete(main())
 
 
 # If Client sends an IAMAT message to Server
