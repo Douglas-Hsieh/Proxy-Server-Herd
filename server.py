@@ -74,7 +74,7 @@ class AT:
 # 	@staticmethod
 # 	def add_location():
 
-# 			client_locations[iamat.client_id] = iamat.lat, iamat.lng
+# 			clients[iamat.client_id] = iamat.lat, iamat.lng
 
 
 def is_iamat(data):
@@ -145,9 +145,9 @@ async def echo_server(reader, writer):
 
 
 # Implementation of an instance of a server response to a client
-async def my_server(reader, writer, server_id, api_key, client_locations):
+async def my_server(reader, writer, server_id, api_key, clients):
 
-	# client_locations = {}  # client_location[client_id] == (lat, lnd)
+	# clients = {}  # clients[client_id] == (lat, lnd)
 
 	while True:
 		encoded_data = await reader.read(65536)
@@ -162,8 +162,7 @@ async def my_server(reader, writer, server_id, api_key, client_locations):
 		if is_iamat(data):
 			iamat = IAMAT(data)
 
-			# Store client location
-			client_locations[iamat.client_id] = iamat.lat, iamat.lng
+			client_id = iamat.client_id
 
 			# Record time elapsed
 			print(iamat.timestamp, time.time())
@@ -171,6 +170,15 @@ async def my_server(reader, writer, server_id, api_key, client_locations):
 
 			# Send AT message to client
 			at = AT.from_iamat(iamat, server_id, time_elapsed)
+
+			# Update client location and at message (accessible by all connections)
+			if not clients.get(client_id):
+				# If no entry, add it
+				clients[client_id] = {}
+
+			clients[client_id]['location'] = iamat.lat, iamat.lng
+			clients[client_id]['at'] = at.__str__()
+
 			writer.write(at.__str__().encode())
 		# Client wants information about the location of a client
 		elif is_whatsat(data):
@@ -180,18 +188,20 @@ async def my_server(reader, writer, server_id, api_key, client_locations):
 			radius = whatsat.radius
 			upper_bound = whatsat.upper_bound
 
-			if client_locations.get(client_id):
+			if clients.get(client_id):
 				# server knows about client location
-				lat, lng = client_locations[client_id]
+				lat, lng = clients[client_id]['location']
 				# Query Google Places API
 				url = get_nearby_search_url(api_key, lat, lng, radius)
-				# TODO: google places api upper bound, make things async, communicate between servers
+				# TODO: make things async, communicate between servers, 
 				print('Querying API with URL: ', url)
 				async with aiohttp.ClientSession() as session:
 					search_result = await request_nearby_search(session, url, upper_bound)
 
+				msg = clients[client_id]['at'] + '\n' + search_result
+
 				# Write search result back to client
-				writer.write(search_result.encode())
+				writer.write(msg.encode())
 
 			else:
 				# server doesn't know this client location, command fails
@@ -254,8 +264,9 @@ async def main():
 	HOST = '127.0.0.1'
 
 	server_ip_address = (HOST, port)
-	client_locations = {}  # client_locations is a reference to a empty dict, {} is an immutable empty dict
-	server = await asyncio.start_server(lambda reader, writer: my_server(reader, writer, server_id, API_KEY, client_locations),
+	clients = {}  # client is a reference to a empty dict, {} is an immutable empty dict
+
+	server = await asyncio.start_server(lambda reader, writer: my_server(reader, writer, server_id, API_KEY, clients),
 		HOST, port)
 	await server.serve_forever()  # Handle client connections
 
