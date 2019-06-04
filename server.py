@@ -70,6 +70,13 @@ class AT:
 		return cls(server_id=server_id, time_elapsed=time_elapsed, client_id=iamat.client_id, gps=iamat.gps, timestamp=iamat.timestamp)
 
 
+# class Client_Location:
+# 	@staticmethod
+# 	def add_location():
+
+# 			client_locations[iamat.client_id] = iamat.lat, iamat.lng
+
+
 def is_iamat(data):
 	try:
 		split_data = data.split(" ")
@@ -124,10 +131,10 @@ async def echo_server(reader, writer):
 	writer.close()
 
 
-# Implementation of a server that responds to client requests
-async def my_server(reader, writer, server_id, api_key):
+# Implementation of an instance of a server response to a client
+async def my_server(reader, writer, server_id, api_key, client_locations):
 
-	client_location = {}  # client_location[client_id] == (lat, lnd)
+	# client_locations = {}  # client_location[client_id] == (lat, lnd)
 
 	while True:
 		encoded_data = await reader.read(1024)
@@ -143,7 +150,7 @@ async def my_server(reader, writer, server_id, api_key):
 			iamat = IAMAT(data)
 
 			# Store client location
-			client_location[iamat.client_id] = iamat.lat, iamat.lng
+			client_locations[iamat.client_id] = iamat.lat, iamat.lng
 
 			# Record time elapsed
 			print(iamat.timestamp, time.time())
@@ -160,21 +167,19 @@ async def my_server(reader, writer, server_id, api_key):
 			radius = whatsat.radius
 			upper_bound = whatsat.radius
 
-			if client_location.get(client_id):
+			if client_locations.get(client_id):
 				# server knows about client location
-				lat, lng = client_location[client_id]
+				lat, lng = client_locations[client_id]
 				# Query Google Places API
 				url = get_nearby_search_url(api_key, lat, lng, radius)
 				# TODO: query google places api, make things async, communicate between servers
 				print('URL: ', url)
 
 				async with aiohttp.ClientSession() as session:
-					print(await nearby_search(session, url, upper_bound))
-
-				# await session
+					search_result = await nearby_search(session, url, upper_bound)
 
 				# Write search result back to client
-				# writer.write(search_result.encode())
+				writer.write(search_result.encode())
 
 			else:
 				# server doesn't know this client location, command fails
@@ -237,8 +242,8 @@ async def main():
 	HOST = '127.0.0.1'
 
 	server_ip_address = (HOST, port)
-
-	server = await asyncio.start_server(lambda reader, writer: my_server(reader, writer, server_id, API_KEY),
+	client_locations = {}  # client_locations is a reference to a empty dict, {} is an immutable empty dict
+	server = await asyncio.start_server(lambda reader, writer: my_server(reader, writer, server_id, API_KEY, client_locations),
 		HOST, port)
 	await server.serve_forever()  # Handle client connections
 

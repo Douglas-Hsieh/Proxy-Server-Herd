@@ -30,18 +30,14 @@ async def client():
 	# Send IAMAT and read response
 	msg = 'IAMAT kiwi.cs.ucla.edu +34.068930-118.445127 ' + str(time.time())
 	await send_msg_and_print_response(reader, writer, msg)
-	# print('Sending: ', msg)
-	# writer.write(msg.encode())
-	# data = await reader.read(1024)
-	# print('Received: ', data.decode())
 
-	# Send WHATSAT and read response
-	msg = 'WHATSAT kiwi.cs.ucla.edu 10 5'
-	await send_msg_and_print_response(reader, writer, msg)
+	# # Send WHATSAT and read response
+	# msg = 'WHATSAT kiwi.cs.ucla.edu 10 5'
+	# await send_msg_and_print_response(reader, writer, msg)
 
-	# Send WHATSAT on location that server doesn't know about
-	msg = 'WHATSAT orange.cs.ucla.edu 10 5'
-	await send_msg_and_print_response(reader, writer, msg)
+	# # Send WHATSAT on location that server doesn't know about
+	# msg = 'WHATSAT orange.cs.ucla.edu 10 5'
+	# await send_msg_and_print_response(reader, writer, msg)
 
 	# Done writing to server
 	writer.close()
