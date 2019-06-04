@@ -94,18 +94,18 @@ def is_whatsat(data):
 	return False
 
 
-def get_url(api_key, whatsat, lat, lng):
-	client_id = whatsat.client_id
-	radius = whatsat.radius
-	upper_bound = whatsat.upper_bound
-	return 'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?' +
-	'input=UCLA' +
-	'&inputtype=textquery' +
-	'&key=' + str(api_key) +
-	'&location=' + lat + ',' + lng +
-	'&radius=' + radius
+def get_nearby_search_url(api_key, lat, lng, radius):
+	return ('https://maps.googleapis.com/maps/api/place/nearbysearch/json?'
+	+ '&key=' + str(api_key)
+	+ '&location=' + str(lat) + ',' + str(lng)
+	+ '&radius=' + str(radius))
 
 
+# Make a nearby search request on Google Places API
+# Return nearby_search result
+async def nearby_search(session, url, upper_bound):
+	async with session.get(url) as response:
+		return (await response.text())
 
 
 # server defines behavior for handling each open_connection
@@ -156,16 +156,25 @@ async def my_server(reader, writer, server_id, api_key):
 		elif is_whatsat(data):
 			whatsat = WHATSAT(data)
 
-
 			client_id = whatsat.client_id
+			radius = whatsat.radius
+			upper_bound = whatsat.radius
 
 			if client_location.get(client_id):
 				# server knows about client location
 				lat, lng = client_location[client_id]
 				# Query Google Places API
-				url = get_url(api_key, whatsat, lat, lng)
+				url = get_nearby_search_url(api_key, lat, lng, radius)
 				# TODO: query google places api, make things async, communicate between servers
-				
+				print('URL: ', url)
+
+				async with aiohttp.ClientSession() as session:
+					print(await nearby_search(session, url, upper_bound))
+
+				# await session
+
+				# Write search result back to client
+				# writer.write(search_result.encode())
 
 			else:
 				# server doesn't know this client location, command fails
@@ -209,7 +218,7 @@ async def main():
 	# AF_INET means IPv4 addresses
 	# SOCK_STREAM means TCP connection
 
-# 804-610-791	11859	11867
+	# 11859	11867
 
 	if server_id == 'Goloman':
 		port = 11861
@@ -288,6 +297,7 @@ async def main():
 
 if __name__ == "__main__":
 	loop = asyncio.get_event_loop()
+	# loop.set_debug(True)
 	# asyncio.run(main())
 	loop.run_until_complete(main())
 
