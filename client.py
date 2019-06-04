@@ -4,7 +4,7 @@ import time
 async def send_msg_and_print_response(reader, writer, msg):
 	print('Sending: ', msg)
 	writer.write(msg.encode())
-	data = await reader.read(1024)
+	data = await reader.read(65536)
 	print('Received: ', data.decode())
 
 async def client():

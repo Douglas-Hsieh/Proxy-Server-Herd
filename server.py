@@ -109,11 +109,24 @@ def get_nearby_search_url(api_key, lat, lng, radius):
 
 
 # Make a nearby search request on Google Places API
-# Return nearby_search result
-async def nearby_search(session, url, upper_bound):
+# Return result in JSON
+async def request_nearby_search(session, url, upper_bound):
 	async with session.get(url) as response:
-		return (await response.text())
+		text = await response.text()
+		print(text)
+		response_dict = json.loads(text)
 
+		if response_dict.get('results'):
+			# Restrict results by upper bound
+			num_results = len(response_dict['results'])
+			num_to_remove = int(num_results) - int(upper_bound)  # Ex: 14 results - 10 max = 4 results to remove
+			if num_to_remove >= 1:
+				# print(response_dict['results'][:-num_to_remove])
+				response_dict['results'] = response_dict['results'][:-num_to_remove]
+			return (json.dumps(response_dict, sort_keys=True, indent=4) + '\n')
+		else:
+			# No results, return everything
+			return text
 
 # server defines behavior for handling each open_connection
 
@@ -137,7 +150,7 @@ async def my_server(reader, writer, server_id, api_key, client_locations):
 	# client_locations = {}  # client_location[client_id] == (lat, lnd)
 
 	while True:
-		encoded_data = await reader.read(1024)
+		encoded_data = await reader.read(65536)
 
 		# Handle if client stops sending data
 		if not encoded_data:
@@ -165,18 +178,17 @@ async def my_server(reader, writer, server_id, api_key, client_locations):
 
 			client_id = whatsat.client_id
 			radius = whatsat.radius
-			upper_bound = whatsat.radius
+			upper_bound = whatsat.upper_bound
 
 			if client_locations.get(client_id):
 				# server knows about client location
 				lat, lng = client_locations[client_id]
 				# Query Google Places API
 				url = get_nearby_search_url(api_key, lat, lng, radius)
-				# TODO: query google places api, make things async, communicate between servers
-				print('URL: ', url)
-
+				# TODO: google places api upper bound, make things async, communicate between servers
+				print('Querying API with URL: ', url)
 				async with aiohttp.ClientSession() as session:
-					search_result = await nearby_search(session, url, upper_bound)
+					search_result = await request_nearby_search(session, url, upper_bound)
 
 				# Write search result back to client
 				writer.write(search_result.encode())
