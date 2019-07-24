@@ -217,7 +217,7 @@ async def my_server(reader, writer, server_id, api_key, clients):
 
 async def main():
 
-	API_KEY = 'AIzaSyCjsE3QvP9vF8oh5F5TDuCmpJH2oG4Tsfw'
+	API_KEY = 'INSERT YOUR OWN KEY HERE'
 
 	# Example request URL
 	'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=UCLA&inputtype=textquery&key=AIzaSyCjsE3QvP9vF8oh5F5TDuCmpJH2oG4Tsfw'
